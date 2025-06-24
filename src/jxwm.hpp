@@ -41,8 +41,7 @@ private:
     void GetExistingWindows();
     typedef union 
     {
-        const char* spawn;
-        Client* c;
+        const char* spawn; //wish to make this a std::string if possible
         int tag;
     } arg;
 
@@ -57,7 +56,7 @@ private:
 
     void GrabKeys();
 
-    void (JXWM::*handlers[LASTEvent])(XEvent*);
+    void (JXWM::*handlers[LASTEvent])(XEvent*); //debating if this should be XEvent* or XEvent&
     void GrabHandlers();
     void OnMapRequest(XEvent* e);
     void OnUnmapNotify(XEvent* e);
@@ -72,7 +71,7 @@ private:
     void ChangeTag(arg* arg);
 
     void FocusClient(Client& client);
-    Window AttemptToGetFocusedWindow();
+    Window AttemptToGetFocusedWindow(); //Probably useless
     Atom WM_DELETE_WINDOW;
     Atom WM_PROTOCOLS;
     Atom NET_SUPPORTED;
@@ -80,6 +79,7 @@ private:
     Atom NET_NUMBER_OF_DESKTOPS;
     Atom NET_CURRENT_DESKTOP;
     Atom NET_CLOSE_WINDOW;
+    //Should I make these in an array?
 
     void Arrange();
     void (JXWM::*layout)(void);

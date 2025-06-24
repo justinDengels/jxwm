@@ -8,10 +8,10 @@ I want this to be a minimalist window manager like dwm, but with a little more. 
 
 Things I want to implement:
 + Tiling (currently have something for master/stack, maybe more down the line)
-+ Tags/Workspaces
++ Tags/Workspaces (Ability to move windows across workspaces/moving windows in general)
 + Support for external bars (like polybar, I don't care to make my own)
 + Config file that can be reloaded with a keybinding
 + Single Monitor Support (As I only use a single monitor I'm not interested in multi-monitor support for the time being, but it could be implemeneted later down the line if everything else is finished and there's request for it)
 + XCB (Currently using XLib, will switch to xcb later down the line)
 
-This is probably a terrible README but those are just my thoughts, if you see this thanks for reading and I'd appreciate any suggestions.
+This is probably a terrible README but those are just my thoughts, if you see this thanks for reading and I'd appreciate any suggestions. I'd also appreciate any resources you found helpful.

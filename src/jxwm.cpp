@@ -7,6 +7,13 @@
 #include <X11/Xatom.h>
 #include <vector>
 
+/*
+ Bugs/Errors/Todos:
+ when running in xephyr killing the first window ends xephyr session
+ add proper tagging support
+ add parseable config file
+ add proper external bar support
+*/
 bool JXWM::otherWM = false;
 
 int JXWM::Init()
@@ -239,7 +246,7 @@ void JXWM::OnClientMessage(XEvent* e)
     {
         XChangeProperty(disp, root, NET_CURRENT_DESKTOP, XA_CARDINAL, 32, PropModeReplace, (unsigned char *)&xcme.data.l[0], 1);
         std::cout << "Got client message to change current tag to tag " << currentTag << std::endl;
-        arg tmp = { .tag = xcme.data.l[0] };
+        arg tmp = { .tag = (int)xcme.data.l[0] };
         ChangeTag(&tmp);
     }
     else if (xcme.message_type == NET_CLOSE_WINDOW)
@@ -251,9 +258,10 @@ void JXWM::OnClientMessage(XEvent* e)
             c = &Clients[Clients.size() - 1];
         }
         std::cout << "Got client message to kill a window, attempting to kill it" << std::endl;
-        arg tmp;
-        tmp.c = c;
-        KillWindow(&tmp);
+        Client tmpFocused = focused;
+        focused = *c;
+        KillWindow(nullptr);
+        focused = tmpFocused;
     }
 }
 
