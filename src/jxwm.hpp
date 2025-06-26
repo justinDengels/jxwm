@@ -3,8 +3,9 @@
 #include <X11/X.h>
 #include <X11/Xlib.h>
 #include <vector>
+#include <string>
 
- typedef struct 
+typedef struct 
 {
     Window window;
     int tag;
@@ -14,8 +15,8 @@
 class JXWM
 {
 public:
-    JXWM() = default;
-    ~JXWM() = default;
+    JXWM();
+    ~JXWM();
     int Init();
     void Run();
 
@@ -32,6 +33,7 @@ private:
     static int OnOtherWMDetected(Display* disp, XErrorEvent* xee);
     static int OnError(Display* disp, XErrorEvent* xee);
     void GetAtoms();
+    void ReadConfigFile(const std::string& configFile);
    
     Client focused;
     std::vector<Client> Clients;
@@ -65,10 +67,13 @@ private:
     void OnClientMessage(XEvent* e);
     void OnDestroyNotify(XEvent* e);
     void OnWindowEnter(XEvent* e);
+    void OnCreateNotify(XEvent* e);
 
     void Spawn(arg* arg);
     void KillWindow(arg*);
     void ChangeTag(arg* arg);
+    void Quit(arg* arg);
+    void ReloadConfig(arg* arg);
 
     void FocusClient(Client& client);
     Window AttemptToGetFocusedWindow(); //Probably useless

@@ -2,11 +2,13 @@
 #include <X11/X.h>
 #include <X11/Xlib.h>
 #include <iostream>
+#include <string>
 #include <unistd.h>
 #include <string.h>
 #include <X11/Xatom.h>
 #include <vector>
-
+#include <fstream>
+#include <sstream>
 /*
  Bugs/Errors/Todos:
  when running in xephyr killing the first window ends xephyr session
@@ -15,6 +17,13 @@
  add proper external bar support
 */
 bool JXWM::otherWM = false;
+
+JXWM::JXWM() {} //init variables later to get rid of warnings
+
+JXWM::~JXWM()
+{
+    XCloseDisplay(disp);
+}
 
 int JXWM::Init()
 {
@@ -34,6 +43,7 @@ int JXWM::Init()
     GetExistingWindows();
     GrabHandlers();
     //temp, TODO: make config file parser
+    /*
     arg* arg1 = new arg{.spawn = "xterm"};
     arg* arg2 = new arg{.tag = 1};
     arg* arg3 = new arg{.tag = 2};
@@ -41,18 +51,22 @@ int JXWM::Init()
     keybinding keb2 {Mod4Mask, XStringToKeysym("i"), &JXWM::KillWindow, nullptr};
     keybinding keb3 {Mod4Mask, XStringToKeysym("1"), &JXWM::ChangeTag, arg2};
     keybinding keb4 {Mod4Mask, XStringToKeysym("2"), &JXWM::ChangeTag, arg3};
+    keybinding keb5 {Mod4Mask, XStringToKeysym("Escape"), &JXWM::Quit, nullptr};
     keybindings.push_back(keb);
     keybindings.push_back(keb2);
     keybindings.push_back(keb3);
     keybindings.push_back(keb4);
+    keybindings.push_back(keb5);
     //end temp
+    */
+    ReadConfigFile("test.conf");
     GrabKeys();
     GetAtoms();
 
+    XSync(disp, false);
     if (otherWM) { return 1; }
 
     XSetErrorHandler(&OnError);
-    XSync(disp, false);
     quit = false;
     return 0;
 }
@@ -124,7 +138,13 @@ int JXWM::OnError(Display* disp, XErrorEvent* xee)
 void JXWM::GrabKeys() 
 {
     XUngrabKey(disp, AnyKey, AnyModifier, root);
-
+    //first, grab tag keybindings
+    for (int i = 0; i < tags; i++)
+    {
+        KeySym ks = XStringToKeysym(std::to_string(i).c_str());
+        XGrabKey(disp, XKeysymToKeycode(disp, ks), Mod4Mask, root, True, GrabModeAsync, GrabModeAsync);
+    }
+    
     for (auto kb: keybindings)
     {
         KeyCode kc = XKeysymToKeycode(disp, kb.sym);
@@ -140,7 +160,8 @@ void JXWM::GrabHandlers()
     handlers[KeyPress] = &JXWM::OnKeyPress;
     handlers[ClientMessage] = &JXWM::OnClientMessage;
     handlers[DestroyNotify] = &JXWM::OnDestroyNotify;
-    handlers[EnterNotify] = &JXWM::OnWindowEnter; 
+    handlers[EnterNotify] = &JXWM::OnWindowEnter;
+    handlers[CreateNotify] = &JXWM::OnCreateNotify;
 }
 
 void JXWM::OnMapRequest(XEvent* e) 
@@ -329,7 +350,6 @@ Window JXWM::AttemptToGetFocusedWindow()
 void JXWM::MasterStack()
 {
     std::cout << "In master stack" << std::endl;
-    // TODO: get current tag
     // TODO: get workable area from struts
     int waX, waY, waW, waH;
     //tmp
@@ -377,9 +397,9 @@ void JXWM::OnWindowEnter(XEvent* e)
 void JXWM::OnUnmapNotify(XEvent* e)
 {
     std::cout << "In unmap notify function" << std::endl;
-    XUnmapEvent xume = e->xunmap;
+    /*XUnmapEvent xume = e->xunmap;
     Client* c = GetClientFromWindow(xume.window);
-    if (c != nullptr && c->window != root) { RemoveClient(*c); }
+    if (c != nullptr && c->window != root) { RemoveClient(*c); }*/
 }
 
 void JXWM::ChangeTag(arg* arg)
@@ -396,4 +416,73 @@ void JXWM::ChangeTag(arg* arg)
     std::cout << "Changed to tag " << currentTag << std::endl;
     Arrange();
 
+}
+
+void JXWM::OnCreateNotify(XEvent* e)
+{
+    std::cout << "In OnCreateNotifyFunction" << std::endl;
+}
+
+void JXWM::Quit(arg* arg)
+{
+    std::cout << "In Quit function" << std::endl;
+    quit = true;
+}
+
+void JXWM::ReadConfigFile(const std::string& configFile)
+{
+    std::ifstream file(configFile);
+    if (!file.is_open())
+    {
+        std::cout << "Could not open config file " << configFile << std::endl;
+        return;
+    }
+
+    std::string line;
+    while (std::getline(file, line))
+    {
+        std::stringstream ss(line);
+        std::string item;
+        char delimiter = ','; 
+        std::vector<std::string> split;
+        while (std::getline(ss, item, delimiter)) { split.push_back(item); }
+        if (split[0] == "run") 
+        {
+            arg a = {.spawn = split[1].c_str()}; 
+            Spawn(&a); 
+        }
+        else if(split[0] == "kb")
+        {
+            //for now assume all mod 4
+            //KeySym sym = std::stoul(split[2]);
+            if (split[3] == "spawn")
+            {
+                //args.push_back(new (arg){.spawn=split[4].c_str()});
+                arg* a = new arg;
+                a->spawn = strdup(split[4].c_str());
+                keybindings.push_back({Mod4Mask, XStringToKeysym(split[2].c_str()), &JXWM::Spawn, a});
+            }
+            else if (split[3] == "killwindow")
+            {
+                keybindings.push_back({Mod4Mask, XStringToKeysym(split[2].c_str()), &JXWM::KillWindow, nullptr});
+            }
+            else if (split[3] == "quit")
+            {
+                keybindings.push_back({Mod4Mask, XStringToKeysym(split[2].c_str()), &JXWM::Quit, nullptr});
+            }
+            else if(split[3] == "reload")
+            {
+                keybindings.push_back({Mod4Mask, XStringToKeysym(split[2].c_str()), &JXWM::ReloadConfig, nullptr});
+            }
+        }
+        //else if()
+    }
+}
+
+void JXWM::ReloadConfig(arg* arg)
+{
+    std::cout << "Reloading config..." << std::endl;
+    keybindings.clear();
+    ReadConfigFile("test.conf");
+    GrabKeys();
 }
