@@ -23,6 +23,7 @@ JXWM::JXWM() {} //init variables later to get rid of warnings
 JXWM::~JXWM()
 {
     XCloseDisplay(disp);
+    std::cout << "Quiting JXWM..." << std::endl;
 }
 
 int JXWM::Init()
@@ -37,7 +38,7 @@ int JXWM::Init()
 
     root = DefaultRootWindow(disp);
     XSetErrorHandler(&OnOtherWMDetected);
-    rootMask = SubstructureRedirectMask | SubstructureNotifyMask | KeyPressMask;
+    long rootMask = SubstructureRedirectMask | SubstructureNotifyMask | KeyPressMask;
     XSelectInput(disp, root, rootMask);
     SetWindowLayout(&JXWM::MasterStack);
     GetExistingWindows();
@@ -68,6 +69,10 @@ int JXWM::Init()
 
     XSetErrorHandler(&OnError);
     quit = false;
+    usableArea.x = usableArea.y = 0;
+    screenum = DefaultScreen(disp);
+    usableArea.w = DisplayWidth(disp, screenum);
+    usableArea.h = DisplayHeight(disp, screenum);
     return 0;
 }
 
@@ -78,6 +83,7 @@ void JXWM::GetAtoms()
     NET_ACTIVE_WINDOW = XInternAtom(disp, "_NET_ACTIVE_WINDOW", false);
     NET_CLOSE_WINDOW = XInternAtom(disp, "_NET_CLOSE_WINDOW", false);
     NET_SUPPORTED = XInternAtom(disp, "_NET_SUPPORTED", false);
+    NET_WM_STRUT_PARTIAL = XInternAtom(disp, "_NET_WM_STRUT_PARTIAL", false);
 
     NET_NUMBER_OF_DESKTOPS = XInternAtom(disp, "_NET_NUMBER_OF_DESKTOPS", false);
     tags = 2;
@@ -90,7 +96,7 @@ void JXWM::GetAtoms()
     //TODO: NET_DESKTOP_NAMES 
 
 
-    Atom atoms[] = { WM_PROTOCOLS, WM_DELETE_WINDOW, NET_ACTIVE_WINDOW, NET_CLOSE_WINDOW, NET_SUPPORTED, NET_NUMBER_OF_DESKTOPS, NET_CURRENT_DESKTOP };
+    Atom atoms[] = { WM_PROTOCOLS, WM_DELETE_WINDOW, NET_ACTIVE_WINDOW, NET_CLOSE_WINDOW, NET_SUPPORTED, NET_NUMBER_OF_DESKTOPS, NET_CURRENT_DESKTOP, NET_WM_STRUT_PARTIAL };
     XChangeProperty(disp, root, NET_SUPPORTED, XA_ATOM, 32, PropModeReplace, (unsigned char *)atoms, sizeof(atoms) / sizeof(Atom));
 }
 
@@ -167,14 +173,29 @@ void JXWM::GrabHandlers()
 void JXWM::OnMapRequest(XEvent* e) 
 {
     std::cout << "In OnMapRequest" << std::endl;
-    Client* c = GetClientFromWindow(e->xmaprequest.window);
-    if (c != nullptr) { return; }
-    Client newClient = { e->xmaprequest.window, currentTag };
-    XMapWindow(disp, newClient.window);
-    XSelectInput(disp, newClient.window, EnterWindowMask | LeaveWindowMask);
-    Clients.push_back(newClient);
-    FocusClient(newClient);
-    Arrange();
+    Window w = e->xmaprequest.window;
+    Client* c = GetClientFromWindow(w);
+    if (c != nullptr) 
+    {
+        XMapWindow(disp, c->window); 
+        return; 
+    }
+    static long struts[12];
+    if (IsPager(w, struts))
+    {
+        UpdateStruts(struts);
+        XMapWindow(disp, w);
+        Arrange();
+    }
+    else
+    {
+        Client newClient = { w, currentTag };
+        XMapWindow(disp, newClient.window);
+        XSelectInput(disp, newClient.window, EnterWindowMask | LeaveWindowMask);
+        Clients.push_back(newClient);
+        FocusClient(newClient);
+        Arrange();
+    }
 }
 
 void JXWM::OnConfigureRequest(XEvent* e)
@@ -351,13 +372,6 @@ void JXWM::MasterStack()
 {
     std::cout << "In master stack" << std::endl;
     // TODO: get workable area from struts
-    int waX, waY, waW, waH;
-    //tmp
-    int snum = DefaultScreen(disp);
-    waW = DisplayWidth(disp, snum);
-    waH = DisplayHeight(disp, snum);
-    waX = waY = 0;
-    //end tmp
     std::vector<Client> visibleClients;
     for (auto c: Clients)
     {
@@ -368,17 +382,17 @@ void JXWM::MasterStack()
     if (numClients == 0) { return; }
     if (numClients == 1)
     {
-        XMoveResizeWindow(disp, visibleClients[0].window, waX, waY, waW, waH);
+        XMoveResizeWindow(disp, visibleClients[0].window, usableArea.x, usableArea.y, usableArea.w, usableArea.h);
         return;
     }
 
     Client master = visibleClients[0];
-    XMoveResizeWindow(disp, master.window, waX, waY, waW/2, waH);
-    int yGap = waH / (numClients - 1);
+    XMoveResizeWindow(disp, master.window, usableArea.x, usableArea.y, usableArea.w/2, usableArea.h);
+    int yGap = usableArea.h / (numClients - 1);
     int yOffSet = 0;
     for (int i = 1; i < numClients; i++)
     {
-        XMoveResizeWindow(disp, visibleClients[i].window, waW / 2, yOffSet, waW / 2, yGap);
+        XMoveResizeWindow(disp, visibleClients[i].window, usableArea.w / 2, yOffSet, usableArea.w / 2, yGap);
         yOffSet += yGap;
     }
 
@@ -449,7 +463,8 @@ void JXWM::ReadConfigFile(const std::string& configFile)
         if (split[0] == "run") 
         {
             arg a = {.spawn = split[1].c_str()}; 
-            Spawn(&a); 
+            Spawn(&a);
+            Arrange(); 
         }
         else if(split[0] == "kb")
         {
@@ -485,4 +500,37 @@ void JXWM::ReloadConfig(arg* arg)
     keybindings.clear();
     ReadConfigFile("test.conf");
     GrabKeys();
+}
+
+bool JXWM::IsPager(Window w, long (&strutsRet)[12])
+{
+    Atom actualType;
+    int actualFormat;
+    unsigned long nItems, bytesAfter;
+    unsigned char* prop = nullptr;
+
+    if (XGetWindowProperty(disp, w, NET_WM_STRUT_PARTIAL, 0, 12, False, XA_CARDINAL, &actualType, &actualFormat, &nItems, &bytesAfter, &prop) == Success && prop)
+   {
+       if (nItems == 12) 
+       {
+            memcpy(strutsRet, prop, sizeof(long) * 12);
+            XFree(prop);
+            return true;
+       }
+        XFree(prop);
+       return true;            
+   }
+   else { return false; }
+}
+
+void JXWM::UpdateStruts(long(&struts)[12])
+{
+    int left   = struts[0];
+    int right  = struts[1];
+    int top    = struts[2];
+    int bottom = struts[3];
+    usableArea.x = left;    
+    usableArea.y = top;
+    usableArea.w = DisplayWidth(disp, screenum) - left - right;
+    usableArea.h = DisplayHeight(disp, screenum) - top - bottom;
 }

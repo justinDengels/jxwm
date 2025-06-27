@@ -11,6 +11,13 @@ typedef struct
     int tag;
 } Client;
 
+typedef struct 
+{
+    int x;
+    int y;
+    uint w;
+    uint h;
+} Rect;
 
 class JXWM
 {
@@ -25,7 +32,8 @@ public:
 private:
     Window root;
     Display* disp;
-    long rootMask;
+    int screenum;
+    Rect usableArea;
     static bool otherWM;
     bool quit;
     int tags;
@@ -84,8 +92,10 @@ private:
     Atom NET_NUMBER_OF_DESKTOPS;
     Atom NET_CURRENT_DESKTOP;
     Atom NET_CLOSE_WINDOW;
+    Atom NET_WM_STRUT_PARTIAL;
     //Should I make these in an array?
-
+    bool IsPager(Window w, long (&strutsRet)[12]);
+    void UpdateStruts(long(&struts)[12]);
     void Arrange();
     void (JXWM::*layout)(void);
     void SetWindowLayout(void(JXWM::*func)(void));
