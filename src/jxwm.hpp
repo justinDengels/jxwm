@@ -4,6 +4,7 @@
 #include <X11/Xlib.h>
 #include <vector>
 #include <string>
+#include <array>
 
 typedef struct 
 {
@@ -19,6 +20,20 @@ typedef struct
     uint h;
 } Rect;
 
+typedef struct 
+{
+    long left;
+    long right;
+    long top;
+    long bottom;
+} Strut;
+
+typedef union 
+{
+    const char* spawn; //wish to make this a std::string if possible
+    int tag;
+} arg;
+
 class JXWM
 {
 public:
@@ -33,6 +48,7 @@ private:
     Window root;
     Display* disp;
     int screenum;
+    Rect screenArea;
     Rect usableArea;
     static bool otherWM;
     bool quit;
@@ -49,11 +65,7 @@ private:
     void RemoveClient(Client& c);
 
     void GetExistingWindows();
-    typedef union 
-    {
-        const char* spawn; //wish to make this a std::string if possible
-        int tag;
-    } arg;
+    
 
     typedef struct 
     {
@@ -66,7 +78,7 @@ private:
 
     void GrabKeys();
 
-    void (JXWM::*handlers[LASTEvent])(const XEvent&); //debating if this should be XEvent* or XEvent&
+    void (JXWM::*handlers[LASTEvent])(const XEvent&); 
     void GrabHandlers();
     void OnMapRequest(const XEvent& e);
     void OnUnmapNotify(const XEvent& e);
@@ -94,8 +106,8 @@ private:
     Atom NET_CLOSE_WINDOW;
     Atom NET_WM_STRUT_PARTIAL;
     //Should I make these in an array?
-    bool IsPager(Window w, long (&strutsRet)[12]);
-    void UpdateStruts(long(&struts)[12]);
+    bool IsPager(Window w, Strut& strutsRet);
+    void UpdateStruts(Strut& struts);
     void Arrange();
     void (JXWM::*layout)(void);
     void SetWindowLayout(void(JXWM::*func)(void));

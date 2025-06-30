@@ -69,10 +69,10 @@ int JXWM::Init()
 
     XSetErrorHandler(&OnError);
     quit = false;
-    usableArea.x = usableArea.y = 0;
+    screenArea.x = screenArea.y = usableArea.x = usableArea.y = 0;
     screenum = DefaultScreen(disp);
-    usableArea.w = DisplayWidth(disp, screenum);
-    usableArea.h = DisplayHeight(disp, screenum);
+    screenArea.w = usableArea.w = DisplayWidth(disp, screenum);
+    screenArea.h = usableArea.h = DisplayHeight(disp, screenum);
     return 0;
 }
 
@@ -86,11 +86,11 @@ void JXWM::GetAtoms()
     NET_WM_STRUT_PARTIAL = XInternAtom(disp, "_NET_WM_STRUT_PARTIAL", false);
 
     NET_NUMBER_OF_DESKTOPS = XInternAtom(disp, "_NET_NUMBER_OF_DESKTOPS", false);
-    tags = 2;
+    tags = 9;
     XChangeProperty(disp, root, NET_NUMBER_OF_DESKTOPS, XA_CARDINAL, 32, PropModeReplace, (unsigned char *)&tags, 1);
 
     NET_CURRENT_DESKTOP = XInternAtom(disp, "_NET_CURRENT_DESKTOP", false);
-    currentTag = 1;
+    currentTag = 0;
     XChangeProperty(disp, root, NET_CURRENT_DESKTOP, XA_CARDINAL, 32, PropModeReplace, (unsigned char *)&currentTag, 1);
 
     //TODO: NET_DESKTOP_NAMES 
@@ -180,7 +180,7 @@ void JXWM::OnMapRequest(const XEvent& e)
         XMapWindow(disp, c->window); 
         return; 
     }
-    static long struts[12];
+    static Strut struts;
     if (IsPager(w, struts))
     {
         UpdateStruts(struts);
@@ -389,7 +389,7 @@ void JXWM::MasterStack()
     Client master = visibleClients[0];
     XMoveResizeWindow(disp, master.window, usableArea.x, usableArea.y, usableArea.w/2, usableArea.h);
     int yGap = usableArea.h / (numClients - 1);
-    int yOffSet = 0;
+    int yOffSet = usableArea.y;
     for (int i = 1; i < numClients; i++)
     {
         XMoveResizeWindow(disp, visibleClients[i].window, usableArea.w / 2, yOffSet, usableArea.w / 2, yGap);
@@ -419,7 +419,7 @@ void JXWM::OnUnmapNotify(const XEvent& e)
 void JXWM::ChangeTag(arg* arg)
 {
     std::cout << "In ChangeTag Function" << std::endl;
-    int tagToChange = arg->tag;
+    int tagToChange = arg->tag - 1;
     if (currentTag == tagToChange) { return; }
     for (auto c: Clients)
     {
@@ -502,35 +502,38 @@ void JXWM::ReloadConfig(arg* arg)
     GrabKeys();
 }
 
-bool JXWM::IsPager(Window w, long (&strutsRet)[12])
+bool JXWM::IsPager(Window w, Strut& strutsRet)
 {
     Atom actualType;
     int actualFormat;
     unsigned long nItems, bytesAfter;
-    unsigned char* prop = nullptr;
+    long* prop = nullptr;
 
-    if (XGetWindowProperty(disp, w, NET_WM_STRUT_PARTIAL, 0, 12, False, XA_CARDINAL, &actualType, &actualFormat, &nItems, &bytesAfter, &prop) == Success && prop)
+    if (XGetWindowProperty(disp, w, NET_WM_STRUT_PARTIAL, 0, 12, False, XA_CARDINAL, &actualType, &actualFormat, &nItems, &bytesAfter, (unsigned char**)&prop) == Success && prop)
    {
        if (nItems == 12) 
        {
-            memcpy(strutsRet, prop, sizeof(long) * 12);
-            XFree(prop);
-            return true;
+           std::cout << "Is real pager pog" << std::endl;
+           strutsRet.left = prop[0];
+           strutsRet.right = prop[1];
+           strutsRet.top = prop[2];
+           strutsRet.bottom = prop[3];
+           std::cout << strutsRet.left << " " << strutsRet.right << " " << strutsRet.top << " " << strutsRet.bottom << std::endl;
+           XFree(prop);
+           return true;
        }
         XFree(prop);
        return true;            
    }
-   else { return false; }
+    else { return false; }
 }
 
-void JXWM::UpdateStruts(long(&struts)[12])
+void JXWM::UpdateStruts(Strut& struts)
 {
-    int left   = struts[0];
-    int right  = struts[1];
-    int top    = struts[2];
-    int bottom = struts[3];
-    usableArea.x = left;    
-    usableArea.y = top;
-    usableArea.w = DisplayWidth(disp, screenum) - left - right;
-    usableArea.h = DisplayHeight(disp, screenum) - top - bottom;
+    usableArea.x = struts.left;    
+    usableArea.y = struts.top;
+    usableArea.w = screenArea.w - struts.left - struts.right;
+    usableArea.h = screenArea.h - struts.top - struts.bottom;
+    std::cout << "Old area:\nx= " << screenArea.x << "\ny= " << screenArea.y << "\nw= " << screenArea.w << "\nh = " << screenArea.h << std::endl;
+    std::cout << "New area:\nx= " << usableArea.x << "\ny= " << usableArea.y << "\nw= " << usableArea.w << "\nh = " << usableArea.h << std::endl;
 }
