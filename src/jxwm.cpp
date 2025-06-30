@@ -118,7 +118,7 @@ void JXWM::Run()
     while (!quit)
     {
         XNextEvent(disp, &e);
-        if (handlers[e.type]) { (this->*handlers[e.type])(&e); }
+        if (handlers[e.type]) { (this->*handlers[e.type])(e); }
     }
 }
 
@@ -170,10 +170,10 @@ void JXWM::GrabHandlers()
     handlers[CreateNotify] = &JXWM::OnCreateNotify;
 }
 
-void JXWM::OnMapRequest(XEvent* e) 
+void JXWM::OnMapRequest(const XEvent& e) 
 {
     std::cout << "In OnMapRequest" << std::endl;
-    Window w = e->xmaprequest.window;
+    Window w = e.xmaprequest.window;
     Client* c = GetClientFromWindow(w);
     if (c != nullptr) 
     {
@@ -198,10 +198,10 @@ void JXWM::OnMapRequest(XEvent* e)
     }
 }
 
-void JXWM::OnConfigureRequest(XEvent* e)
+void JXWM::OnConfigureRequest(const XEvent& e)
 {
     std::cout << "In OnConfigureRequest" << std::endl;
-    XConfigureRequestEvent xcre = e->xconfigurerequest;
+    XConfigureRequestEvent xcre = e.xconfigurerequest;
     XWindowChanges xwc;
     xwc.x = xcre.x;
     xwc.y = xcre.y;
@@ -213,10 +213,10 @@ void JXWM::OnConfigureRequest(XEvent* e)
     XConfigureWindow(disp, xcre.window, xcre.value_mask, &xwc);
 }
 
-void JXWM::OnKeyPress(XEvent* e)
+void JXWM::OnKeyPress(const XEvent& e)
 {
     std::cout << "In OnKeyPress" << std::endl;
-    XKeyEvent xke = e->xkey;
+    XKeyEvent xke = e.xkey;
 
     for (auto kb: keybindings)
     {
@@ -274,10 +274,10 @@ void JXWM::KillWindow(arg*)
     Arrange();
 }
 
-void JXWM::OnClientMessage(XEvent* e)
+void JXWM::OnClientMessage(const XEvent& e)
 {
     std::cout << "In OnClientMessage function" << std::endl;
-    XClientMessageEvent xcme = e->xclient;
+    XClientMessageEvent xcme = e.xclient;
     if (xcme.message_type == NET_NUMBER_OF_DESKTOPS)
     {
         tags = xcme.data.l[0];
@@ -307,10 +307,10 @@ void JXWM::OnClientMessage(XEvent* e)
     }
 }
 
-void JXWM::OnDestroyNotify(XEvent* e)
+void JXWM::OnDestroyNotify(const XEvent& e)
 {
     std::cout << "In OnDestroyNotify" << std::endl;
-    XDestroyWindowEvent xdwe = e->xdestroywindow;
+    XDestroyWindowEvent xdwe = e.xdestroywindow;
     Client* c = GetClientFromWindow(xdwe.window);
     if (c == nullptr || c->window == root) { return; }
     if (focused.window == c->window) 
@@ -401,14 +401,14 @@ void JXWM::MasterStack()
 void JXWM::SetWindowLayout(void(JXWM::*func)(void)) { layout = func; }
 void JXWM::Arrange() { (this->*layout)(); }
 
-void JXWM::OnWindowEnter(XEvent* e)
+void JXWM::OnWindowEnter(const XEvent& e)
 {
     std::cout << "In OnWindowEnter function" << std::endl;
-    Client* c = GetClientFromWindow(e->xcrossing.window);
+    Client* c = GetClientFromWindow(e.xcrossing.window);
     if (c != nullptr) { FocusClient(*c); }
 }
 
-void JXWM::OnUnmapNotify(XEvent* e)
+void JXWM::OnUnmapNotify(const XEvent& e)
 {
     std::cout << "In unmap notify function" << std::endl;
     /*XUnmapEvent xume = e->xunmap;
@@ -432,7 +432,7 @@ void JXWM::ChangeTag(arg* arg)
 
 }
 
-void JXWM::OnCreateNotify(XEvent* e)
+void JXWM::OnCreateNotify(const XEvent& e)
 {
     std::cout << "In OnCreateNotifyFunction" << std::endl;
 }

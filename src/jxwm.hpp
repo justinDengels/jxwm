@@ -66,16 +66,16 @@ private:
 
     void GrabKeys();
 
-    void (JXWM::*handlers[LASTEvent])(XEvent*); //debating if this should be XEvent* or XEvent&
+    void (JXWM::*handlers[LASTEvent])(const XEvent&); //debating if this should be XEvent* or XEvent&
     void GrabHandlers();
-    void OnMapRequest(XEvent* e);
-    void OnUnmapNotify(XEvent* e);
-    void OnConfigureRequest(XEvent* e);
-    void OnKeyPress(XEvent* e);
-    void OnClientMessage(XEvent* e);
-    void OnDestroyNotify(XEvent* e);
-    void OnWindowEnter(XEvent* e);
-    void OnCreateNotify(XEvent* e);
+    void OnMapRequest(const XEvent& e);
+    void OnUnmapNotify(const XEvent& e);
+    void OnConfigureRequest(const XEvent& e);
+    void OnKeyPress(const XEvent& e);
+    void OnClientMessage(const XEvent& e);
+    void OnDestroyNotify(const XEvent& e);
+    void OnWindowEnter(const XEvent& e);
+    void OnCreateNotify(const XEvent& e);
 
     void Spawn(arg* arg);
     void KillWindow(arg*);
