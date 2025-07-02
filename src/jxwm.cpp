@@ -1,6 +1,7 @@
 #include "jxwm.hpp"
 #include <X11/X.h>
 #include <X11/Xlib.h>
+#include <X11/keysym.h>
 #include <iostream>
 #include <string>
 #include <unistd.h>
@@ -43,23 +44,6 @@ int JXWM::Init()
     SetWindowLayout(&JXWM::MasterStack);
     GetExistingWindows();
     GrabHandlers();
-    //temp, TODO: make config file parser
-    /*
-    arg* arg1 = new arg{.spawn = "xterm"};
-    arg* arg2 = new arg{.tag = 1};
-    arg* arg3 = new arg{.tag = 2};
-    keybinding keb {Mod4Mask, XStringToKeysym("o"), &JXWM::Spawn, arg1};
-    keybinding keb2 {Mod4Mask, XStringToKeysym("i"), &JXWM::KillWindow, nullptr};
-    keybinding keb3 {Mod4Mask, XStringToKeysym("1"), &JXWM::ChangeTag, arg2};
-    keybinding keb4 {Mod4Mask, XStringToKeysym("2"), &JXWM::ChangeTag, arg3};
-    keybinding keb5 {Mod4Mask, XStringToKeysym("Escape"), &JXWM::Quit, nullptr};
-    keybindings.push_back(keb);
-    keybindings.push_back(keb2);
-    keybindings.push_back(keb3);
-    keybindings.push_back(keb4);
-    keybindings.push_back(keb5);
-    //end temp
-    */
     ReadConfigFile("test.conf");
     GrabKeys();
     GetAtoms();
@@ -145,10 +129,9 @@ void JXWM::GrabKeys()
 {
     XUngrabKey(disp, AnyKey, AnyModifier, root);
     //first, grab tag keybindings
-    for (int i = 0; i < tags; i++)
-    {
-        KeySym ks = XStringToKeysym(std::to_string(i).c_str());
-        XGrabKey(disp, XKeysymToKeycode(disp, ks), Mod4Mask, root, True, GrabModeAsync, GrabModeAsync);
+    for (int i = 0; i < 9; i++)
+    { 
+        keybindings.push_back({Mod4Mask, XK_1 + i, &JXWM::ChangeTag, new arg{.tag = i}});
     }
     
     for (auto kb: keybindings)
@@ -419,7 +402,7 @@ void JXWM::OnUnmapNotify(const XEvent& e)
 void JXWM::ChangeTag(arg* arg)
 {
     std::cout << "In ChangeTag Function" << std::endl;
-    int tagToChange = arg->tag - 1;
+    int tagToChange = arg->tag;
     if (currentTag == tagToChange) { return; }
     for (auto c: Clients)
     {
@@ -428,8 +411,8 @@ void JXWM::ChangeTag(arg* arg)
     }
     currentTag = tagToChange;
     std::cout << "Changed to tag " << currentTag << std::endl;
+    XChangeProperty(disp, root, NET_CURRENT_DESKTOP, XA_CARDINAL, 32, PropModeReplace, (unsigned char *)&currentTag, 1);
     Arrange();
-
 }
 
 void JXWM::OnCreateNotify(const XEvent& e)
