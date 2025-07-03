@@ -14,6 +14,9 @@ build:
 run:
 	./run.sh
 
+install:
+	sudo cp $(OBJ_NAME) /usr/bin
+
 debug:
 	gdb $(OBJ_NAME)
 

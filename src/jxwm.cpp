@@ -23,8 +23,10 @@ JXWM::JXWM() {} //init variables later to get rid of warnings
 
 JXWM::~JXWM()
 {
-    XCloseDisplay(disp);
     std::cout << "Quiting JXWM..." << std::endl;
+    XCloseDisplay(disp);
+    for (auto kb: keybindings) { delete kb.argument; }
+    //pkill KILL -u $USER
 }
 
 int JXWM::Init()
@@ -44,7 +46,9 @@ int JXWM::Init()
     SetWindowLayout(&JXWM::MasterStack);
     GetExistingWindows();
     GrabHandlers();
-    ReadConfigFile("test.conf");
+    const char* HOME = std::getenv("HOME");
+    std::string configPath = std::string(HOME) + "/.config/jxwm/jxwm.conf";
+    ReadConfigFile(configPath);
     GrabKeys();
     GetAtoms();
 
@@ -163,6 +167,13 @@ void JXWM::OnMapRequest(const XEvent& e)
         XMapWindow(disp, c->window); 
         return; 
     }
+    static XWindowAttributes wa;
+    if (!XGetWindowAttributes(disp, w, &wa)) { return; }
+    if (wa.override_redirect)
+    {
+        XMapWindow(disp, w);
+        return;
+    }
     static Strut struts;
     if (IsPager(w, struts))
     {
@@ -210,25 +221,29 @@ void JXWM::OnKeyPress(const XEvent& e)
     }
 }
 
-void JXWM::Spawn(arg* arg)
+void JXWM::Spawn(arg* arg) { Spawn(arg->spawn); }
+
+void JXWM::Spawn(const char* spawn)
 {
     std::cout << "In Spawn function" << std::endl;
     if (fork())
     {
         if (disp) { close(ConnectionNumber(disp)); }
         setsid();
-        execl("/bin/sh", "sh", "-c", arg->spawn, 0);
+        execl("/bin/sh", "sh", "-c", spawn, 0);
         exit(0);
     }
 }
 
-void JXWM::KillWindow(arg*)
+void JXWM::KillWindow(arg* arg) { KillWindow(focused.window); }
+
+void JXWM::KillWindow(Window w)
 {
     std::cout << "In KillWindow function" << std::endl;
-    if (focused.window == root) { return; }
+    if (w == root) { return; }
     Atom* retAtoms;
     int numAtoms;
-    if (XGetWMProtocols(disp, focused.window, &retAtoms, &numAtoms))
+    if (XGetWMProtocols(disp, w, &retAtoms, &numAtoms))
     {
         for (int i = 0; i < numAtoms; i++)
         {
@@ -237,14 +252,14 @@ void JXWM::KillWindow(arg*)
                 XEvent killEvent;
                 memset(&killEvent, 0, sizeof(killEvent));
                 killEvent.xclient.type = ClientMessage;
-                killEvent.xclient.window = focused.window;
+                killEvent.xclient.window = w;
                 killEvent.xclient.message_type = WM_PROTOCOLS;
                 killEvent.xclient.format = 32;
                 killEvent.xclient.data.l[0] = WM_DELETE_WINDOW;
                 killEvent.xclient.data.l[1] = CurrentTime;
-                XSendEvent(disp, focused.window, False, NoEventMask, &killEvent);
+                XSendEvent(disp, w, False, NoEventMask, &killEvent);
                 XFree(retAtoms);
-                RemoveClient(focused);
+                RemoveClient(*GetClientFromWindow(w));
                 Arrange();
                 return;
             }
@@ -252,8 +267,8 @@ void JXWM::KillWindow(arg*)
         XFree(retAtoms);
     }
     std::cout << "Could not get delete window atom" << std::endl;
-    XKillClient(disp, focused.window);
-    RemoveClient(focused);
+    XKillClient(disp, w);
+    RemoveClient(*GetClientFromWindow(w));
     Arrange();
 }
 
@@ -269,10 +284,10 @@ void JXWM::OnClientMessage(const XEvent& e)
     }
     else if (xcme.message_type == NET_CURRENT_DESKTOP)
     {
-        XChangeProperty(disp, root, NET_CURRENT_DESKTOP, XA_CARDINAL, 32, PropModeReplace, (unsigned char *)&xcme.data.l[0], 1);
+        int clientTag = xcme.data.l[0];
+        XChangeProperty(disp, root, NET_CURRENT_DESKTOP, XA_CARDINAL, 32, PropModeReplace, (unsigned char *)&clientTag, 1);
         std::cout << "Got client message to change current tag to tag " << currentTag << std::endl;
-        arg tmp = { .tag = (int)xcme.data.l[0] };
-        ChangeTag(&tmp);
+        ChangeTag(clientTag);
     }
     else if (xcme.message_type == NET_CLOSE_WINDOW)
     {
@@ -283,10 +298,7 @@ void JXWM::OnClientMessage(const XEvent& e)
             c = &Clients[Clients.size() - 1];
         }
         std::cout << "Got client message to kill a window, attempting to kill it" << std::endl;
-        Client tmpFocused = focused;
-        focused = *c;
-        KillWindow(nullptr);
-        focused = tmpFocused;
+        KillWindow(c->window);
     }
 }
 
@@ -399,10 +411,11 @@ void JXWM::OnUnmapNotify(const XEvent& e)
     if (c != nullptr && c->window != root) { RemoveClient(*c); }*/
 }
 
-void JXWM::ChangeTag(arg* arg)
+void JXWM::ChangeTag(arg* arg) { ChangeTag(arg->tag); }
+
+void JXWM::ChangeTag(int tagToChange)
 {
     std::cout << "In ChangeTag Function" << std::endl;
-    int tagToChange = arg->tag;
     if (currentTag == tagToChange) { return; }
     for (auto c: Clients)
     {

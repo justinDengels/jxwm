@@ -6,6 +6,7 @@ xinit ./xinitrc -- \
         :100 \
         -ac \
         -screen 1728x972 \
+        -glamor \
         -host-cursor \
         -noreset
 

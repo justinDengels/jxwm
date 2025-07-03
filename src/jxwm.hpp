@@ -4,7 +4,6 @@
 #include <X11/Xlib.h>
 #include <vector>
 #include <string>
-#include <array>
 
 typedef struct 
 {
@@ -90,8 +89,11 @@ private:
     void OnCreateNotify(const XEvent& e);
 
     void Spawn(arg* arg);
-    void KillWindow(arg*);
+    void Spawn(const char* spawn);
+    void KillWindow(arg* arg);
+    void KillWindow(Window w);
     void ChangeTag(arg* arg);
+    void ChangeTag(int tagToChange);
     void Quit(arg* arg);
     void ReloadConfig(arg* arg);
 
