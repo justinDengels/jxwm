@@ -19,14 +19,19 @@
 */
 bool JXWM::otherWM = false;
 
-JXWM::JXWM() {} //init variables later to get rid of warnings
+JXWM::JXWM() 
+{
+    disp = nullptr;
+    borderWidth = 3;
+    currentTag = 0;
+    tags = 9;
+} //init variables later to get rid of warnings
 
 JXWM::~JXWM()
 {
     std::cout << "Quiting JXWM..." << std::endl;
     XCloseDisplay(disp);
-    for (auto kb: keybindings) { delete kb.argument; }
-    //pkill KILL -u $USER
+    //pkill -KILL -u $USER
 }
 
 int JXWM::Init()
@@ -44,13 +49,13 @@ int JXWM::Init()
     long rootMask = SubstructureRedirectMask | SubstructureNotifyMask | KeyPressMask;
     XSelectInput(disp, root, rootMask);
     SetWindowLayout(&JXWM::MasterStack);
+    GetAtoms();
     GetExistingWindows();
     GrabHandlers();
     const char* HOME = std::getenv("HOME");
     std::string configPath = std::string(HOME) + "/.config/jxwm/jxwm.conf";
     ReadConfigFile(configPath);
     GrabKeys();
-    GetAtoms();
 
     XSync(disp, false);
     if (otherWM) { return 1; }
@@ -74,11 +79,9 @@ void JXWM::GetAtoms()
     NET_WM_STRUT_PARTIAL = XInternAtom(disp, "_NET_WM_STRUT_PARTIAL", false);
 
     NET_NUMBER_OF_DESKTOPS = XInternAtom(disp, "_NET_NUMBER_OF_DESKTOPS", false);
-    tags = 9;
     XChangeProperty(disp, root, NET_NUMBER_OF_DESKTOPS, XA_CARDINAL, 32, PropModeReplace, (unsigned char *)&tags, 1);
 
     NET_CURRENT_DESKTOP = XInternAtom(disp, "_NET_CURRENT_DESKTOP", false);
-    currentTag = 0;
     XChangeProperty(disp, root, NET_CURRENT_DESKTOP, XA_CARDINAL, 32, PropModeReplace, (unsigned char *)&currentTag, 1);
 
     //TODO: NET_DESKTOP_NAMES 
@@ -135,7 +138,8 @@ void JXWM::GrabKeys()
     //first, grab tag keybindings
     for (int i = 0; i < 9; i++)
     { 
-        keybindings.push_back({Mod4Mask, XK_1 + i, &JXWM::ChangeTag, new arg{.tag = i}});
+        keybindings.push_back({Mod4Mask, XK_1 + i, &JXWM::ChangeTag, {.tag = i}});
+        keybindings.push_back({Mod4Mask | ShiftMask, XK_1 + i, &JXWM::ChangeClientTag, {.tag = i}});
     }
     
     for (auto kb: keybindings)
@@ -214,9 +218,9 @@ void JXWM::OnKeyPress(const XEvent& e)
 
     for (auto kb: keybindings)
     {
-        if ((xke.keycode == XKeysymToKeycode(disp, kb.sym)) && ((kb.mod & xke.state))) 
+        if ((xke.keycode == XKeysymToKeycode(disp, kb.sym)) && ((kb.mod & xke.state) == kb.mod)) 
         { 
-            (this->*kb.func)(kb.argument); 
+            (this->*kb.func)(&kb.argument); 
         }
     }
 }
@@ -323,6 +327,7 @@ void JXWM::FocusClient(Client& client)
 {
     unsigned long FBG_COLOR = 0x0000ff;
     unsigned long UBG_COLOR = 0xff0000;
+    XSetWindowBorderWidth(disp, client.window, borderWidth);
     XSetWindowBorder(disp, focused.window, UBG_COLOR);
     focused = client;
     XSetWindowBorder(disp, focused.window, FBG_COLOR);
@@ -377,23 +382,24 @@ void JXWM::MasterStack()
     if (numClients == 0) { return; }
     if (numClients == 1)
     {
-        XMoveResizeWindow(disp, visibleClients[0].window, usableArea.x, usableArea.y, usableArea.w, usableArea.h);
+        JMoveResizeClient(visibleClients[0], usableArea.x, usableArea.y, usableArea.w, usableArea.h);
         return;
     }
 
     Client master = visibleClients[0];
-    XMoveResizeWindow(disp, master.window, usableArea.x, usableArea.y, usableArea.w/2, usableArea.h);
+    JMoveResizeClient(master, usableArea.x, usableArea.y, usableArea.w/2, usableArea.h);
     int yGap = usableArea.h / (numClients - 1);
     int yOffSet = usableArea.y;
     for (int i = 1; i < numClients; i++)
     {
-        XMoveResizeWindow(disp, visibleClients[i].window, usableArea.w / 2, yOffSet, usableArea.w / 2, yGap);
+        JMoveResizeClient(visibleClients[i], usableArea.w / 2, yOffSet, usableArea.w / 2, yGap);
         yOffSet += yGap;
     }
 
 }
 
 void JXWM::SetWindowLayout(void(JXWM::*func)(void)) { layout = func; }
+
 void JXWM::Arrange() { (this->*layout)(); }
 
 void JXWM::OnWindowEnter(const XEvent& e)
@@ -468,10 +474,7 @@ void JXWM::ReadConfigFile(const std::string& configFile)
             //KeySym sym = std::stoul(split[2]);
             if (split[3] == "spawn")
             {
-                //args.push_back(new (arg){.spawn=split[4].c_str()});
-                arg* a = new arg;
-                a->spawn = strdup(split[4].c_str());
-                keybindings.push_back({Mod4Mask, XStringToKeysym(split[2].c_str()), &JXWM::Spawn, a});
+                keybindings.push_back({Mod4Mask, XStringToKeysym(split[2].c_str()), &JXWM::Spawn, {.spawn = strdup(split[4].c_str())}});
             }
             else if (split[3] == "killwindow")
             {
@@ -509,12 +512,10 @@ bool JXWM::IsPager(Window w, Strut& strutsRet)
    {
        if (nItems == 12) 
        {
-           std::cout << "Is real pager pog" << std::endl;
            strutsRet.left = prop[0];
            strutsRet.right = prop[1];
            strutsRet.top = prop[2];
            strutsRet.bottom = prop[3];
-           std::cout << strutsRet.left << " " << strutsRet.right << " " << strutsRet.top << " " << strutsRet.bottom << std::endl;
            XFree(prop);
            return true;
        }
@@ -532,4 +533,21 @@ void JXWM::UpdateStruts(Strut& struts)
     usableArea.h = screenArea.h - struts.top - struts.bottom;
     std::cout << "Old area:\nx= " << screenArea.x << "\ny= " << screenArea.y << "\nw= " << screenArea.w << "\nh = " << screenArea.h << std::endl;
     std::cout << "New area:\nx= " << usableArea.x << "\ny= " << usableArea.y << "\nw= " << usableArea.w << "\nh = " << usableArea.h << std::endl;
+}
+
+void JXWM::ChangeClientTag(arg* arg) { ChangeClientTag(focused.window, arg->tag); }
+
+void JXWM::ChangeClientTag(Window w, int tag)
+{
+    std::cout << "In ChangeClientTag Function" << std::endl;
+    Client* c = GetClientFromWindow(w);
+    if (c == nullptr) { return; }
+    if (c->tag == tag) { return; }
+    c->tag = tag;
+    ChangeTag(tag);
+}
+
+int JXWM::JMoveResizeClient(Client& c, int x, int y, uint w, uint h)
+{
+    return XMoveResizeWindow(disp, c.window, x + borderWidth, y + borderWidth, w - (2*borderWidth), h - (2*borderWidth));
 }

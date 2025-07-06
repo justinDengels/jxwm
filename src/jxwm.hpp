@@ -5,7 +5,7 @@
 #include <vector>
 #include <string>
 
-typedef struct 
+typedef struct Client
 {
     Window window;
     int tag;
@@ -47,6 +47,7 @@ private:
     Window root;
     Display* disp;
     int screenum;
+    int borderWidth;
     Rect screenArea;
     Rect usableArea;
     static bool otherWM;
@@ -71,7 +72,7 @@ private:
         unsigned mod;
         KeySym sym;
         void (JXWM::*func)(arg*);
-        arg* argument;
+        arg argument;
     } keybinding;
     std::vector<keybinding> keybindings;
 
@@ -94,6 +95,8 @@ private:
     void KillWindow(Window w);
     void ChangeTag(arg* arg);
     void ChangeTag(int tagToChange);
+    void ChangeClientTag(arg* arg);
+    void ChangeClientTag(Window w, int tag);
     void Quit(arg* arg);
     void ReloadConfig(arg* arg);
 
@@ -113,5 +116,7 @@ private:
     void Arrange();
     void (JXWM::*layout)(void);
     void SetWindowLayout(void(JXWM::*func)(void));
+    //Same as the XMoveResizeWindow function but takes into account the border width
+    int JMoveResizeClient(Client& c, int x, int y, uint w, uint h);
     void MasterStack();
 };
