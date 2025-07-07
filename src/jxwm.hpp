@@ -3,12 +3,12 @@
 #include <X11/X.h>
 #include <X11/Xlib.h>
 #include <vector>
+#include <array>
 #include <string>
 
 typedef struct Client
 {
     Window window;
-    int tag;
 } Client;
 
 typedef struct 
@@ -59,10 +59,10 @@ private:
     void GetAtoms();
     void ReadConfigFile(const std::string& configFile);
    
-    Client focused;
-    std::vector<Client> Clients;
+    Client* focused;
+    std::array<std::vector<Client>, 9> Clients;
     Client* GetClientFromWindow(Window w);
-    void RemoveClient(Client& c);
+    void RemoveClient(Client* c);
 
     void GetExistingWindows();
     
@@ -92,15 +92,15 @@ private:
     void Spawn(arg* arg);
     void Spawn(const char* spawn);
     void KillWindow(arg* arg);
-    void KillWindow(Window w);
+    void KillWindow(Client* c);
     void ChangeTag(arg* arg);
     void ChangeTag(int tagToChange);
     void ChangeClientTag(arg* arg);
-    void ChangeClientTag(Window w, int tag);
+    void ChangeClientTag(Client* c, int tag);
     void Quit(arg* arg);
     void ReloadConfig(arg* arg);
 
-    void FocusClient(Client& client);
+    void FocusClient(Client* c);
     Window AttemptToGetFocusedWindow(); //Probably useless
     Atom WM_DELETE_WINDOW;
     Atom WM_PROTOCOLS;

@@ -10,6 +10,8 @@
 #include <vector>
 #include <fstream>
 #include <sstream>
+
+#define PRINTHERE std::cout << __LINE__ << std::endl;
 /*
  Bugs/Errors/Todos:
  when running in xephyr killing the first window ends xephyr session
@@ -22,6 +24,7 @@ bool JXWM::otherWM = false;
 JXWM::JXWM() 
 {
     disp = nullptr;
+    focused = nullptr;
     borderWidth = 3;
     currentTag = 0;
     tags = 9;
@@ -97,7 +100,7 @@ void JXWM::GetExistingWindows()
     Window rootr, pReturn, *children;
     uint nChildren;
     XQueryTree(disp, root, &rootr, &pReturn, &children, &nChildren);
-    for (uint i = 0; i < nChildren; i++) { Clients.push_back({children[i]}); }
+    for (uint i = 0; i < nChildren; i++) { Clients[currentTag].push_back({children[i]}); }
     XUngrabServer(disp);
     XFree(children);
     Arrange();
@@ -164,36 +167,34 @@ void JXWM::GrabHandlers()
 void JXWM::OnMapRequest(const XEvent& e) 
 {
     std::cout << "In OnMapRequest" << std::endl;
-    Window w = e.xmaprequest.window;
-    Client* c = GetClientFromWindow(w);
+    Window w = e.xmaprequest.window; 
+    Client* c = GetClientFromWindow(w); 
     if (c != nullptr) 
     {
         XMapWindow(disp, c->window); 
         return; 
     }
     static XWindowAttributes wa;
-    if (!XGetWindowAttributes(disp, w, &wa)) { return; }
-    if (wa.override_redirect)
+
+    if (!XGetWindowAttributes(disp, w, &wa)) { return; } 
+    if (wa.override_redirect) 
     {
-        XMapWindow(disp, w);
+        XMapWindow(disp, w); 
         return;
     }
     static Strut struts;
-    if (IsPager(w, struts))
+    if (IsPager(w, struts)) 
     {
-        UpdateStruts(struts);
-        XMapWindow(disp, w);
-        Arrange();
+        UpdateStruts(struts); 
+        XMapWindow(disp, w); 
+        Arrange(); 
+        return;
     }
-    else
-    {
-        Client newClient = { w, currentTag };
-        XMapWindow(disp, newClient.window);
-        XSelectInput(disp, newClient.window, EnterWindowMask | LeaveWindowMask);
-        Clients.push_back(newClient);
-        FocusClient(newClient);
-        Arrange();
-    }
+    XMapWindow(disp, w); 
+    XSelectInput(disp, w, EnterWindowMask | LeaveWindowMask); 
+    Clients[currentTag].push_back({w}); 
+    FocusClient(GetClientFromWindow(w));
+    Arrange(); 
 }
 
 void JXWM::OnConfigureRequest(const XEvent& e)
@@ -239,15 +240,15 @@ void JXWM::Spawn(const char* spawn)
     }
 }
 
-void JXWM::KillWindow(arg* arg) { KillWindow(focused.window); }
+void JXWM::KillWindow(arg* arg) { KillWindow(focused); }
 
-void JXWM::KillWindow(Window w)
+void JXWM::KillWindow(Client* c)
 {
     std::cout << "In KillWindow function" << std::endl;
-    if (w == root) { return; }
+    if (c == nullptr) { return; }
     Atom* retAtoms;
     int numAtoms;
-    if (XGetWMProtocols(disp, w, &retAtoms, &numAtoms))
+    if (XGetWMProtocols(disp, c->window, &retAtoms, &numAtoms))
     {
         for (int i = 0; i < numAtoms; i++)
         {
@@ -256,14 +257,14 @@ void JXWM::KillWindow(Window w)
                 XEvent killEvent;
                 memset(&killEvent, 0, sizeof(killEvent));
                 killEvent.xclient.type = ClientMessage;
-                killEvent.xclient.window = w;
+                killEvent.xclient.window = c->window;
                 killEvent.xclient.message_type = WM_PROTOCOLS;
                 killEvent.xclient.format = 32;
                 killEvent.xclient.data.l[0] = WM_DELETE_WINDOW;
                 killEvent.xclient.data.l[1] = CurrentTime;
-                XSendEvent(disp, w, False, NoEventMask, &killEvent);
+                XSendEvent(disp, c->window, False, NoEventMask, &killEvent);
                 XFree(retAtoms);
-                RemoveClient(*GetClientFromWindow(w));
+                RemoveClient(c);
                 Arrange();
                 return;
             }
@@ -271,8 +272,8 @@ void JXWM::KillWindow(Window w)
         XFree(retAtoms);
     }
     std::cout << "Could not get delete window atom" << std::endl;
-    XKillClient(disp, w);
-    RemoveClient(*GetClientFromWindow(w));
+    XKillClient(disp, c->window);
+    RemoveClient(c);
     Arrange();
 }
 
@@ -295,14 +296,9 @@ void JXWM::OnClientMessage(const XEvent& e)
     }
     else if (xcme.message_type == NET_CLOSE_WINDOW)
     {
-        Client* c = GetClientFromWindow(xcme.window);
-        if (c == nullptr)
-        {
-            Clients.push_back({xcme.window});
-            c = &Clients[Clients.size() - 1];
-        }
         std::cout << "Got client message to kill a window, attempting to kill it" << std::endl;
-        KillWindow(c->window);
+        Client* c = GetClientFromWindow(xcme.window);
+        KillWindow(c);
     }
 }
 
@@ -311,51 +307,50 @@ void JXWM::OnDestroyNotify(const XEvent& e)
     std::cout << "In OnDestroyNotify" << std::endl;
     XDestroyWindowEvent xdwe = e.xdestroywindow;
     Client* c = GetClientFromWindow(xdwe.window);
-    if (c == nullptr || c->window == root) { return; }
-    if (focused.window == c->window) 
-    {
-        Window w = AttemptToGetFocusedWindow();
-        Client* next = GetClientFromWindow(w);
-        if (next == nullptr) { return; }
-        focused = *next;
-    }
-    RemoveClient(*c);
+    if (c == nullptr) { return; }
+    if (focused->window == c->window) { focused = nullptr; }
+    RemoveClient(c);
 }
 
 
-void JXWM::FocusClient(Client& client)
+void JXWM::FocusClient(Client* c)
 {
     unsigned long FBG_COLOR = 0x0000ff;
     unsigned long UBG_COLOR = 0xff0000;
-    XSetWindowBorderWidth(disp, client.window, borderWidth);
-    XSetWindowBorder(disp, focused.window, UBG_COLOR);
-    focused = client;
-    XSetWindowBorder(disp, focused.window, FBG_COLOR);
-    XSetInputFocus(disp, client.window, RevertToPointerRoot, CurrentTime);
-    XRaiseWindow(disp, client.window);
-    XChangeProperty(disp, root, NET_ACTIVE_WINDOW, XA_WINDOW, 32, PropModeReplace, (unsigned char *)&client.window, 1);
+    XSetWindowBorderWidth(disp, c->window, borderWidth);
+    if (focused != nullptr) { XSetWindowBorder(disp, focused->window, UBG_COLOR); }
+    focused = c;
+    XSetWindowBorder(disp, focused->window, FBG_COLOR);
+    XSetInputFocus(disp, c->window, RevertToPointerRoot, CurrentTime);
+    XRaiseWindow(disp, c->window);
+    XChangeProperty(disp, root, NET_ACTIVE_WINDOW, XA_WINDOW, 32, PropModeReplace, (unsigned char *)&c->window, 1);
 }
 
 Client* JXWM::GetClientFromWindow(Window w)
 {
     for (int i = 0; i < Clients.size(); i++) 
     {
-        if (Clients[i].window == w) { return &Clients[i]; }
+        for (int j = 0; j < Clients[i].size(); j++) 
+        { 
+            if (Clients[i][j].window == w) { return &Clients[i][j]; }
+        }
     }
-
     return nullptr;
 }
 
-void JXWM::RemoveClient(Client& c) 
+void JXWM::RemoveClient(Client* c) 
 {
+    if (c == nullptr) { return; }
     for (int i = 0; i < Clients.size(); i++)
     {
-        if (Clients[i].window == c.window) 
+        for (int j = 0; j < Clients[i].size(); j++)
         {
-            Clients.erase(Clients.begin() + i);
-            Arrange();
-            if (c.window == focused.window) { if (Clients.size() > 0) { FocusClient(Clients[0]); } }
-            return;
+            if (Clients[i][j].window == c->window)
+            {
+                if (c->window == focused->window) { focused = nullptr; }
+                Clients[i].erase(Clients[i].begin() + j);
+                Arrange();
+            }
         }
     }
 }
@@ -371,28 +366,22 @@ Window JXWM::AttemptToGetFocusedWindow()
 void JXWM::MasterStack()
 {
     std::cout << "In master stack" << std::endl;
-    // TODO: get workable area from struts
-    std::vector<Client> visibleClients;
-    for (auto c: Clients)
-    {
-        if (c.tag == currentTag) { visibleClients.push_back(c); }
-    }
 
-    int numClients = visibleClients.size();
+    int numClients = Clients[currentTag].size();
     if (numClients == 0) { return; }
     if (numClients == 1)
     {
-        JMoveResizeClient(visibleClients[0], usableArea.x, usableArea.y, usableArea.w, usableArea.h);
+        JMoveResizeClient(Clients[currentTag][0], usableArea.x, usableArea.y, usableArea.w, usableArea.h);
         return;
     }
 
-    Client master = visibleClients[0];
+    Client master = Clients[currentTag][0];
     JMoveResizeClient(master, usableArea.x, usableArea.y, usableArea.w/2, usableArea.h);
     int yGap = usableArea.h / (numClients - 1);
     int yOffSet = usableArea.y;
     for (int i = 1; i < numClients; i++)
     {
-        JMoveResizeClient(visibleClients[i], usableArea.w / 2, yOffSet, usableArea.w / 2, yGap);
+        JMoveResizeClient(Clients[currentTag][i], usableArea.w / 2, yOffSet, usableArea.w / 2, yGap);
         yOffSet += yGap;
     }
 
@@ -406,15 +395,12 @@ void JXWM::OnWindowEnter(const XEvent& e)
 {
     std::cout << "In OnWindowEnter function" << std::endl;
     Client* c = GetClientFromWindow(e.xcrossing.window);
-    if (c != nullptr) { FocusClient(*c); }
+    if (c != nullptr) { FocusClient(c); }
 }
 
 void JXWM::OnUnmapNotify(const XEvent& e)
 {
     std::cout << "In unmap notify function" << std::endl;
-    /*XUnmapEvent xume = e->xunmap;
-    Client* c = GetClientFromWindow(xume.window);
-    if (c != nullptr && c->window != root) { RemoveClient(*c); }*/
 }
 
 void JXWM::ChangeTag(arg* arg) { ChangeTag(arg->tag); }
@@ -423,12 +409,9 @@ void JXWM::ChangeTag(int tagToChange)
 {
     std::cout << "In ChangeTag Function" << std::endl;
     if (currentTag == tagToChange) { return; }
-    for (auto c: Clients)
-    {
-        if (c.tag == currentTag) { XUnmapWindow(disp, c.window); }
-        else if (c.tag == tagToChange) { XMapWindow(disp, c.window); }
-    }
+    for (auto c: Clients[currentTag]) { XUnmapWindow(disp, c.window); }
     currentTag = tagToChange;
+    for (auto c: Clients[currentTag]) { XMapWindow(disp, c.window); }
     std::cout << "Changed to tag " << currentTag << std::endl;
     XChangeProperty(disp, root, NET_CURRENT_DESKTOP, XA_CARDINAL, 32, PropModeReplace, (unsigned char *)&currentTag, 1);
     Arrange();
@@ -535,15 +518,16 @@ void JXWM::UpdateStruts(Strut& struts)
     std::cout << "New area:\nx= " << usableArea.x << "\ny= " << usableArea.y << "\nw= " << usableArea.w << "\nh = " << usableArea.h << std::endl;
 }
 
-void JXWM::ChangeClientTag(arg* arg) { ChangeClientTag(focused.window, arg->tag); }
+void JXWM::ChangeClientTag(arg* arg) { ChangeClientTag(focused, arg->tag); }
 
-void JXWM::ChangeClientTag(Window w, int tag)
+void JXWM::ChangeClientTag(Client* c, int tag)
 {
     std::cout << "In ChangeClientTag Function" << std::endl;
-    Client* c = GetClientFromWindow(w);
     if (c == nullptr) { return; }
-    if (c->tag == tag) { return; }
-    c->tag = tag;
+    if (currentTag == tag) { return; }
+    Window w = c->window;
+    RemoveClient(c);
+    Clients[tag].push_back({w});
     ChangeTag(tag);
 }
 
