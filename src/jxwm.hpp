@@ -99,6 +99,9 @@ private:
     void ChangeClientTag(Client* c, int tag);
     void Quit(arg* arg);
     void ReloadConfig(arg* arg);
+    void MoveClientLeft(arg* arg);
+    void MoveClientRight(arg* arg);
+    void MoveClient(Client* c, int amount);
 
     void FocusClient(Client* c);
     Window AttemptToGetFocusedWindow(); //Probably useless

@@ -10,6 +10,7 @@
 #include <vector>
 #include <fstream>
 #include <sstream>
+#include <algorithm>
 
 #define PRINTHERE std::cout << __LINE__ << std::endl;
 /*
@@ -141,8 +142,8 @@ void JXWM::GrabKeys()
     //first, grab tag keybindings
     for (int i = 0; i < 9; i++)
     { 
-        keybindings.push_back({Mod4Mask, XK_1 + i, &JXWM::ChangeTag, {.tag = i}});
         keybindings.push_back({Mod4Mask | ShiftMask, XK_1 + i, &JXWM::ChangeClientTag, {.tag = i}});
+        keybindings.push_back({Mod4Mask, XK_1 + i, &JXWM::ChangeTag, {.tag = i}});
     }
     
     for (auto kb: keybindings)
@@ -315,6 +316,7 @@ void JXWM::OnDestroyNotify(const XEvent& e)
 
 void JXWM::FocusClient(Client* c)
 {
+    if (c == nullptr) { return; }
     unsigned long FBG_COLOR = 0x0000ff;
     unsigned long UBG_COLOR = 0xff0000;
     XSetWindowBorderWidth(disp, c->window, borderWidth);
@@ -341,15 +343,16 @@ Client* JXWM::GetClientFromWindow(Window w)
 void JXWM::RemoveClient(Client* c) 
 {
     if (c == nullptr) { return; }
-    for (int i = 0; i < Clients.size(); i++)
+    for (auto i = 0; i < Clients.size(); i++)
     {
-        for (int j = 0; j < Clients[i].size(); j++)
+        for (auto it = Clients[i].begin(); it != Clients[i].end(); it++)
         {
-            if (Clients[i][j].window == c->window)
+            if (it->window == c->window)
             {
                 if (c->window == focused->window) { focused = nullptr; }
-                Clients[i].erase(Clients[i].begin() + j);
+                Clients[i].erase(it);
                 Arrange();
+                return;
             }
         }
     }
@@ -446,9 +449,8 @@ void JXWM::ReadConfigFile(const std::string& configFile)
         std::vector<std::string> split;
         while (std::getline(ss, item, delimiter)) { split.push_back(item); }
         if (split[0] == "run") 
-        {
-            arg a = {.spawn = split[1].c_str()}; 
-            Spawn(&a);
+        { 
+            Spawn(split[1].c_str());
             Arrange(); 
         }
         else if(split[0] == "kb")
@@ -470,6 +472,14 @@ void JXWM::ReadConfigFile(const std::string& configFile)
             else if(split[3] == "reload")
             {
                 keybindings.push_back({Mod4Mask, XStringToKeysym(split[2].c_str()), &JXWM::ReloadConfig, nullptr});
+            }
+            else if (split[3] == "move_left")
+            {
+                keybindings.push_back({Mod4Mask, XStringToKeysym(split[2].c_str()), &JXWM::MoveClientLeft, nullptr});
+            }
+            else if (split[3] == "move_right")
+            {
+                keybindings.push_back({Mod4Mask, XStringToKeysym(split[2].c_str()), &JXWM::MoveClientRight, nullptr});
             }
         }
         //else if()
@@ -523,11 +533,18 @@ void JXWM::ChangeClientTag(arg* arg) { ChangeClientTag(focused, arg->tag); }
 void JXWM::ChangeClientTag(Client* c, int tag)
 {
     std::cout << "In ChangeClientTag Function" << std::endl;
-    if (c == nullptr) { return; }
-    if (currentTag == tag) { return; }
-    Window w = c->window;
-    RemoveClient(c);
-    Clients[tag].push_back({w});
+    if (c == nullptr || currentTag == tag || tag < 0 || tag >= tags) { return; }
+    auto& from = Clients[currentTag];
+    auto& to = Clients[tag];
+    for (auto it = from.begin(); it != from.end(); it++)
+    {
+        if (it->window == c->window)
+        {
+            to.push_back(std::move(*it));
+            from.erase(it);
+            break;
+        }
+    }
     ChangeTag(tag);
 }
 
@@ -535,3 +552,26 @@ int JXWM::JMoveResizeClient(Client& c, int x, int y, uint w, uint h)
 {
     return XMoveResizeWindow(disp, c.window, x + borderWidth, y + borderWidth, w - (2*borderWidth), h - (2*borderWidth));
 }
+
+void JXWM::MoveClientLeft(arg* arg) { MoveClient(focused, -1); }
+
+void JXWM::MoveClientRight(arg* arg) { MoveClient(focused, 1); }
+
+void JXWM::MoveClient(Client* c, int amount)
+{
+    std::cout << "In MoveClient function" << std::endl;
+    if (c == nullptr || Clients[currentTag].size() <= 1) { return; }
+    int idx;
+    for (auto i = 0; i < Clients[currentTag].size(); i++)
+    {
+        if (Clients[currentTag][i].window == c->window)
+        {
+            idx = i;
+            break;
+        }
+    }
+    int other = (idx + amount) % Clients[currentTag].size();
+    std::swap(Clients[currentTag][idx], Clients[currentTag][other]);
+    Arrange();
+}
+
