@@ -173,6 +173,7 @@ void JXWM::OnMapRequest(const XEvent& e)
     if (c != nullptr) 
     {
         XMapWindow(disp, c->window); 
+        Arrange();
         return; 
     }
     static XWindowAttributes wa;
@@ -284,13 +285,13 @@ void JXWM::OnClientMessage(const XEvent& e)
     XClientMessageEvent xcme = e.xclient;
     if (xcme.message_type == NET_NUMBER_OF_DESKTOPS)
     {
-        tags = xcme.data.l[0];
+        tags = (int)xcme.data.l[0];
         XChangeProperty(disp, root, NET_NUMBER_OF_DESKTOPS, XA_CARDINAL, 32, PropModeReplace, (unsigned char *)&tags, 1);
         std::cout << "Got client message to change number of virtual desktops to " << tags << std::endl;
     }
     else if (xcme.message_type == NET_CURRENT_DESKTOP)
     {
-        int clientTag = xcme.data.l[0];
+        int clientTag = (int)xcme.data.l[0];
         XChangeProperty(disp, root, NET_CURRENT_DESKTOP, XA_CARDINAL, 32, PropModeReplace, (unsigned char *)&clientTag, 1);
         std::cout << "Got client message to change current tag to tag " << currentTag << std::endl;
         ChangeTag(clientTag);
@@ -309,10 +310,8 @@ void JXWM::OnDestroyNotify(const XEvent& e)
     XDestroyWindowEvent xdwe = e.xdestroywindow;
     Client* c = GetClientFromWindow(xdwe.window);
     if (c == nullptr) { return; }
-    if (focused->window == c->window) { focused = nullptr; }
     RemoveClient(c);
 }
-
 
 void JXWM::FocusClient(Client* c)
 {
