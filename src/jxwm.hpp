@@ -98,6 +98,7 @@ private:
     void ChangeClientTag(arg* arg);
     void ChangeClientTag(Client* c, int tag);
     void Quit(arg* arg);
+    void Logout(arg* arg);
     void ReloadConfig(arg* arg);
     void MoveClientLeft(arg* arg);
     void MoveClientRight(arg* arg);

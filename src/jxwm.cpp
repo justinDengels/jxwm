@@ -2,6 +2,7 @@
 #include <X11/X.h>
 #include <X11/Xlib.h>
 #include <X11/keysym.h>
+#include <cstdlib>
 #include <iostream>
 #include <string>
 #include <unistd.h>
@@ -11,6 +12,7 @@
 #include <fstream>
 #include <sstream>
 #include <algorithm>
+#include "logger.hpp"
 
 #define PRINTHERE std::cout << __LINE__ << std::endl;
 /*
@@ -29,11 +31,16 @@ JXWM::JXWM()
     borderWidth = 3;
     currentTag = 0;
     tags = 9;
+    
+    JLogger::SetLogType(JLogger::LOGBOTH);
+    JLogger::SetLogLevel(JLogger::LOGTRACE);
+    JLogger::SetLogPath(std::string(getenv("HOME")) + "/.config/jxwm/jxwm.log");
+    
 } //init variables later to get rid of warnings
 
 JXWM::~JXWM()
 {
-    std::cout << "Quiting JXWM..." << std::endl;
+    JLogger::Info("Quiting JXWM...");
     XCloseDisplay(disp);
     //pkill -KILL -u $USER
 }
@@ -41,10 +48,9 @@ JXWM::~JXWM()
 int JXWM::Init()
 {
     disp = XOpenDisplay(NULL);
-
     if (disp == NULL)
     {
-        std::cout << "Error: Failed to open X Display" << std::endl;
+        JLogger::Error("Failed to open X Display");
         return 1;
     }
 
@@ -120,19 +126,21 @@ void JXWM::Run()
 int JXWM::OnOtherWMDetected(Display* disp, XErrorEvent* xee)
 {
     otherWM = true;
-    std::cout << "Other window manager detected" << std::endl;
+    JLogger::Error("Other window manager detected");
     return 0;
 }
 
 int JXWM::OnError(Display* disp, XErrorEvent* xee)
 {
-    std::cout << "An error occurred" << std::endl;
+    JLogger::Error("An error occurred");
     char text[512];
     XGetErrorText(disp, xee->error_code, text, sizeof(text));
-    std::cout << text << "\nCode: " << xee->error_code
+    std::stringstream ss;
+    ss << text << "\nCode: " << xee->error_code
         << "\nType: " << xee->type << "\nSerial: " << xee->serial
         << "\nMinor: " << xee->minor_code << "\nResource ID: " << xee->resourceid
-        << "\nRequest Code: " << xee->request_code << std::endl;
+        << "\nRequest Code: " << xee->request_code;
+    JLogger::Error(ss.str());
     return 0;
 }
 
@@ -167,7 +175,7 @@ void JXWM::GrabHandlers()
 
 void JXWM::OnMapRequest(const XEvent& e) 
 {
-    std::cout << "In OnMapRequest" << std::endl;
+    JLogger::Trace("In OnMapRequest");
     Window w = e.xmaprequest.window; 
     Client* c = GetClientFromWindow(w); 
     if (c != nullptr) 
@@ -201,7 +209,7 @@ void JXWM::OnMapRequest(const XEvent& e)
 
 void JXWM::OnConfigureRequest(const XEvent& e)
 {
-    std::cout << "In OnConfigureRequest" << std::endl;
+    JLogger::Trace("In OnConfigureRequest");
     XConfigureRequestEvent xcre = e.xconfigurerequest;
     XWindowChanges xwc;
     xwc.x = xcre.x;
@@ -216,7 +224,7 @@ void JXWM::OnConfigureRequest(const XEvent& e)
 
 void JXWM::OnKeyPress(const XEvent& e)
 {
-    std::cout << "In OnKeyPress" << std::endl;
+    JLogger::Trace("In OnKeyPress");
     XKeyEvent xke = e.xkey;
 
     for (auto kb: keybindings)
@@ -232,7 +240,7 @@ void JXWM::Spawn(arg* arg) { Spawn(arg->spawn); }
 
 void JXWM::Spawn(const char* spawn)
 {
-    std::cout << "In Spawn function" << std::endl;
+    JLogger::Trace("In Spawn function");
     if (fork())
     {
         if (disp) { close(ConnectionNumber(disp)); }
@@ -246,7 +254,7 @@ void JXWM::KillWindow(arg* arg) { KillWindow(focused); }
 
 void JXWM::KillWindow(Client* c)
 {
-    std::cout << "In KillWindow function" << std::endl;
+    JLogger::Trace("In KillWindow function");
     if (c == nullptr) { return; }
     Atom* retAtoms;
     int numAtoms;
@@ -273,7 +281,7 @@ void JXWM::KillWindow(Client* c)
         }
         XFree(retAtoms);
     }
-    std::cout << "Could not get delete window atom" << std::endl;
+    JLogger::Warning("Could not get delete window atom");
     XKillClient(disp, c->window);
     RemoveClient(c);
     Arrange();
@@ -281,32 +289,36 @@ void JXWM::KillWindow(Client* c)
 
 void JXWM::OnClientMessage(const XEvent& e)
 {
-    std::cout << "In OnClientMessage function" << std::endl;
+    JLogger::Trace("In OnClientMessage function");
     XClientMessageEvent xcme = e.xclient;
     if (xcme.message_type == NET_NUMBER_OF_DESKTOPS)
     {
         tags = (int)xcme.data.l[0];
         XChangeProperty(disp, root, NET_NUMBER_OF_DESKTOPS, XA_CARDINAL, 32, PropModeReplace, (unsigned char *)&tags, 1);
-        std::cout << "Got client message to change number of virtual desktops to " << tags << std::endl;
+        JLogger::Info("Got client message to change number of virtual desktops to " + std::to_string(tags));
     }
     else if (xcme.message_type == NET_CURRENT_DESKTOP)
     {
         int clientTag = (int)xcme.data.l[0];
         XChangeProperty(disp, root, NET_CURRENT_DESKTOP, XA_CARDINAL, 32, PropModeReplace, (unsigned char *)&clientTag, 1);
-        std::cout << "Got client message to change current tag to tag " << currentTag << std::endl;
+        JLogger::Info("Got client message to change current tag to tag " + std::to_string(currentTag));
         ChangeTag(clientTag);
     }
     else if (xcme.message_type == NET_CLOSE_WINDOW)
     {
-        std::cout << "Got client message to kill a window, attempting to kill it" << std::endl;
+        JLogger::Info("Got client message to kill a window, attempting to kill it");
         Client* c = GetClientFromWindow(xcme.window);
         KillWindow(c);
+    }
+    else
+    {
+        JLogger::Info("Got unknonw client message " + std::string(XGetAtomName(disp, xcme.message_type)));
     }
 }
 
 void JXWM::OnDestroyNotify(const XEvent& e)
 {
-    std::cout << "In OnDestroyNotify" << std::endl;
+    JLogger::Trace("In OnDestroyNotify");
     XDestroyWindowEvent xdwe = e.xdestroywindow;
     Client* c = GetClientFromWindow(xdwe.window);
     if (c == nullptr) { return; }
@@ -367,7 +379,7 @@ Window JXWM::AttemptToGetFocusedWindow()
 
 void JXWM::MasterStack()
 {
-    std::cout << "In master stack" << std::endl;
+    JLogger::Trace("In master stack");
 
     int numClients = Clients[currentTag].size();
     if (numClients == 0) { return; }
@@ -395,38 +407,38 @@ void JXWM::Arrange() { (this->*layout)(); }
 
 void JXWM::OnWindowEnter(const XEvent& e)
 {
-    std::cout << "In OnWindowEnter function" << std::endl;
+    JLogger::Trace("In OnWindowEnter function");
     Client* c = GetClientFromWindow(e.xcrossing.window);
     if (c != nullptr) { FocusClient(c); }
 }
 
 void JXWM::OnUnmapNotify(const XEvent& e)
 {
-    std::cout << "In unmap notify function" << std::endl;
+    JLogger::Trace("In unmap notify function");
 }
 
 void JXWM::ChangeTag(arg* arg) { ChangeTag(arg->tag); }
 
 void JXWM::ChangeTag(int tagToChange)
 {
-    std::cout << "In ChangeTag Function" << std::endl;
+    JLogger::Trace("In ChangeTag Function");
     if (currentTag == tagToChange) { return; }
     for (auto c: Clients[currentTag]) { XUnmapWindow(disp, c.window); }
     currentTag = tagToChange;
     for (auto c: Clients[currentTag]) { XMapWindow(disp, c.window); }
-    std::cout << "Changed to tag " << currentTag << std::endl;
+    JLogger::Info("Changed to tag " + std::to_string(currentTag));
     XChangeProperty(disp, root, NET_CURRENT_DESKTOP, XA_CARDINAL, 32, PropModeReplace, (unsigned char *)&currentTag, 1);
     Arrange();
 }
 
 void JXWM::OnCreateNotify(const XEvent& e)
 {
-    std::cout << "In OnCreateNotifyFunction" << std::endl;
+    JLogger::Trace("In OnCreateNotifyFunction");
 }
 
 void JXWM::Quit(arg* arg)
 {
-    std::cout << "In Quit function" << std::endl;
+    JLogger::Trace("In Quit function");
     quit = true;
 }
 
@@ -435,7 +447,7 @@ void JXWM::ReadConfigFile(const std::string& configFile)
     std::ifstream file(configFile);
     if (!file.is_open())
     {
-        std::cout << "Could not open config file " << configFile << std::endl;
+        JLogger::Error("Could not open config file " + configFile);
         return;
     }
 
@@ -468,6 +480,10 @@ void JXWM::ReadConfigFile(const std::string& configFile)
             {
                 keybindings.push_back({Mod4Mask, XStringToKeysym(split[2].c_str()), &JXWM::Quit, nullptr});
             }
+            else if (split[3] == "logout")
+            {
+                keybindings.push_back({Mod4Mask, XStringToKeysym(split[2].c_str()), &JXWM::Logout, nullptr});
+            }
             else if(split[3] == "reload")
             {
                 keybindings.push_back({Mod4Mask, XStringToKeysym(split[2].c_str()), &JXWM::ReloadConfig, nullptr});
@@ -481,13 +497,16 @@ void JXWM::ReadConfigFile(const std::string& configFile)
                 keybindings.push_back({Mod4Mask, XStringToKeysym(split[2].c_str()), &JXWM::MoveClientRight, nullptr});
             }
         }
-        //else if()
+        else if ( split[0] == "set")
+        {
+            if (split[1] == "bw") { borderWidth = std::stoi(split[2]); }
+        }
     }
 }
 
 void JXWM::ReloadConfig(arg* arg)
 {
-    std::cout << "Reloading config..." << std::endl;
+    JLogger::Info("Reloading config...");
     keybindings.clear();
     ReadConfigFile("test.conf");
     GrabKeys();
@@ -523,15 +542,14 @@ void JXWM::UpdateStruts(Strut& struts)
     usableArea.y = struts.top;
     usableArea.w = screenArea.w - struts.left - struts.right;
     usableArea.h = screenArea.h - struts.top - struts.bottom;
-    std::cout << "Old area:\nx= " << screenArea.x << "\ny= " << screenArea.y << "\nw= " << screenArea.w << "\nh = " << screenArea.h << std::endl;
-    std::cout << "New area:\nx= " << usableArea.x << "\ny= " << usableArea.y << "\nw= " << usableArea.w << "\nh = " << usableArea.h << std::endl;
+    JLogger::Info("Updated workable area");
 }
 
 void JXWM::ChangeClientTag(arg* arg) { ChangeClientTag(focused, arg->tag); }
 
 void JXWM::ChangeClientTag(Client* c, int tag)
 {
-    std::cout << "In ChangeClientTag Function" << std::endl;
+    JLogger::Trace("In ChangeClientTag Function");
     if (c == nullptr || currentTag == tag || tag < 0 || tag >= tags) { return; }
     auto& from = Clients[currentTag];
     auto& to = Clients[tag];
@@ -558,7 +576,7 @@ void JXWM::MoveClientRight(arg* arg) { MoveClient(focused, 1); }
 
 void JXWM::MoveClient(Client* c, int amount)
 {
-    std::cout << "In MoveClient function" << std::endl;
+    JLogger::Trace("In MoveClient function");
     if (c == nullptr || Clients[currentTag].size() <= 1) { return; }
     int idx;
     for (auto i = 0; i < Clients[currentTag].size(); i++)
@@ -574,3 +592,4 @@ void JXWM::MoveClient(Client* c, int amount)
     Arrange();
 }
 
+void JXWM::Logout(arg* arg) { Spawn("pkill -KILL -u $USER"); }
